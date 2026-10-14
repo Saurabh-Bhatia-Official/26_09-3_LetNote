@@ -153,7 +153,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-packages
-          path: build/macos_packages/LetNote-macOS.dmg
+          path: |
+            build/macos_packages/LetNote-macOS.dmg
+            build/macos_packages/LetNote-macOS.zip
           retention-days: 14
 
   # ==========================================
@@ -203,7 +205,7 @@ jobs:
       - name: Install Linux Build Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libsecret-1-dev libjsoncpp-dev
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -277,9 +279,11 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.0.0-build.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
           name: LetNote v1.0.0 (Build ${{ github.run_number }})
           draft: false
           prerelease: false
+          make_latest: true
           generate_release_notes: true
           body: |
             ## LetNote Universal Offline-First Notes Release

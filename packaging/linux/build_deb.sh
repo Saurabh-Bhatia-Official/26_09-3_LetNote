@@ -35,7 +35,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Depends: libc6, libgtk-3-0
+Depends: libc6, libgtk-3-0, libsecret-1-0
 Maintainer: LetNote Team <contact@letnote.app>
 Description: Universal Offline-First Notes Management
  LetNote is a high-performance offline-first notes application with local AES-256 encryption and SQLite FTS5 search.
