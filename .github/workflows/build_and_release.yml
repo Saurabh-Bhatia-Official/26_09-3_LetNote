@@ -1,0 +1,300 @@
+name: Build & Release Multi-Platform Packages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # ==========================================
+  # 1. WINDOWS BUILD (.exe installer wizard)
+  # ==========================================
+  build-windows:
+    name: Build Windows (.exe Installer)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Run Tests
+        run: flutter test
+
+      - name: Build Windows Release
+        run: flutter build windows --release
+
+      - name: Compile Inno Setup Installer (.exe Wizard)
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" packaging\windows\inno_setup.iss
+
+      - name: Create Portable Zip
+        run: |
+          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath build\windows_installer\LetNote-Windows-x64-Portable.zip -Force
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-packages
+          path: |
+            build/windows_installer/LetNote-Windows-x64-Setup.exe
+            build/windows_installer/LetNote-Windows-x64-Portable.zip
+          retention-days: 14
+
+  # ==========================================
+  # 2. ANDROID BUILD (.apk & .aab)
+  # ==========================================
+  build-android:
+    name: Build Android (.apk & .aab)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Setup Android Keystore (Optional Secrets)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Configuring release keystore from GitHub Secrets..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > android/app/release.keystore
+            cat << EOF > android/key.properties
+            storePassword=$KEYSTORE_PASSWORD
+            keyPassword=$KEY_PASSWORD
+            keyAlias=$KEY_ALIAS
+            storeFile=release.keystore
+          EOF
+          else
+            echo "No custom Android keystore secret found; using standard release build."
+          fi
+
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      - name: Build Android App Bundle (.aab)
+        run: flutter build appbundle --release
+
+      - name: Prepare Android Output
+        run: |
+          mkdir -p build/android_packages
+          cp build/app/outputs/flutter-apk/app-release.apk build/android_packages/LetNote-Android-release.apk
+          cp build/app/outputs/bundle/release/app-release.aab build/android_packages/LetNote-Android-release.aab
+
+      - name: Upload Android Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-packages
+          path: |
+            build/android_packages/LetNote-Android-release.apk
+            build/android_packages/LetNote-Android-release.aab
+          retention-days: 14
+
+  # ==========================================
+  # 3. macOS BUILD (.dmg)
+  # ==========================================
+  build-macos:
+    name: Build macOS (.dmg)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build macOS Release
+        run: flutter build macos --release
+
+      - name: Package macOS .dmg
+        run: |
+          chmod +x packaging/macos/build_dmg.sh
+          ./packaging/macos/build_dmg.sh
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-packages
+          path: build/macos_packages/LetNote-macOS.dmg
+          retention-days: 14
+
+  # ==========================================
+  # 4. iOS BUILD (.ipa)
+  # ==========================================
+  build-ios:
+    name: Build iOS (.ipa)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build iOS App Bundle
+        run: flutter build ios --release --no-codesign
+
+      - name: Package iOS .ipa
+        run: |
+          chmod +x packaging/ios/build_ipa.sh
+          ./packaging/ios/build_ipa.sh
+
+      - name: Upload iOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-packages
+          path: build/ios_packages/LetNote-iOS-unsigned.ipa
+          retention-days: 14
+
+  # ==========================================
+  # 5. LINUX BUILD (.deb & .tar.gz)
+  # ==========================================
+  build-linux:
+    name: Build Linux (.deb & .tar.gz)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install Linux Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Build Linux Release
+        run: flutter build linux --release
+
+      - name: Package Linux .deb
+        run: |
+          chmod +x packaging/linux/build_deb.sh
+          ./packaging/linux/build_deb.sh
+
+      - name: Create Linux Tarball (.tar.gz)
+        run: |
+          tar -czvf build/linux_packages/LetNote-Linux-x64.tar.gz -C build/linux/x64/release/bundle .
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            build/linux_packages/LetNote-Linux-amd64.deb
+            build/linux_packages/LetNote-Linux-x64.tar.gz
+          retention-days: 14
+
+  # ==========================================
+  # 6. GITHUB RELEASE CREATION
+  # ==========================================
+  publish-release:
+    name: Publish Multi-Platform Release
+    needs: [build-windows, build-android, build-macos, build-ios, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Windows Packages
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-packages
+          path: release_artifacts
+
+      - name: Download Android Packages
+        uses: actions/download-artifact@v4
+        with:
+          name: android-packages
+          path: release_artifacts
+
+      - name: Download macOS Packages
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-packages
+          path: release_artifacts
+
+      - name: Download iOS Packages
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-packages
+          path: release_artifacts
+
+      - name: Download Linux Packages
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-packages
+          path: release_artifacts
+
+      - name: Create / Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-build.${{ github.run_number }}
+          name: LetNote v1.0.0 (Build ${{ github.run_number }})
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          body: |
+            ## LetNote Universal Offline-First Notes Release
+            Automated build from commit `${{ github.sha }}` on branch `main`.
+
+            ### Installation Packages:
+            - **Windows**: `LetNote-Windows-x64-Setup.exe` (Next → Next → Install wizard) & `LetNote-Windows-x64-Portable.zip`
+            - **macOS**: `LetNote-macOS.dmg` (Drag-and-drop installer)
+            - **iOS**: `LetNote-iOS-unsigned.ipa` (Distribution/Sideload package)
+            - **Android**: `LetNote-Android-release.apk` (Direct install) & `LetNote-Android-release.aab` (Google Play bundle)
+            - **Linux**: `LetNote-Linux-amd64.deb` (Debian/Ubuntu package) & `LetNote-Linux-x64.tar.gz` (Standalone bundle)
+
+            ### Verification & Integrity:
+            All packages compiled directly from source using Flutter stable SDK and Clean Architecture standards.
+          files: |
+            release_artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

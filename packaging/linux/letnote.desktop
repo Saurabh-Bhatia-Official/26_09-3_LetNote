@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=LetNote
+Comment=Universal Offline-First Notes Management
+Exec=letnote %u
+Icon=letnote
+Terminal=false
+Categories=Office;Utility;TextEditor;
+StartupWMClass=let_note
+Keywords=notes;offline;markdown;todo;checklist;
